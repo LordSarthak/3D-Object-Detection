@@ -1,0 +1,7 @@
+path: D:/PYTHON PROJECT/datayolo
+train: ../images/train
+val: ../images/val
+test: ../images/test
+
+nc: 2
+names: ['Flatfoot', 'Normal Foot']
