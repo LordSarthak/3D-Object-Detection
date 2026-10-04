@@ -1,5 +1,7 @@
 venv/
+.venv-yolo/
 *.h5
 *.dll
 *.pyd
 __pycache__/
+yolov8n-pose.pt
