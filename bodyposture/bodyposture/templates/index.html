@@ -36,6 +36,9 @@
       .brand-mark { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 11px; background: var(--green); color: white; }
       .brand-name { font-size: 17px; }
       .brand-name span { color: var(--muted); font-size: 13px; font-weight: 450; }
+      .workflow-nav { display: flex; flex-wrap: wrap; gap: 14px; }
+      .workflow-nav a { color: var(--muted); font-size: 12px; text-decoration: none; }
+      .workflow-nav a:hover { color: var(--green-dark); }
       .privacy { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
       .privacy svg { color: var(--green); }
       main { padding-top: 38px; }
@@ -142,6 +145,10 @@
           </div>
           <div class="brand-name">Posture Monitor <span>/ personal check-in</span></div>
         </div>
+        <nav class="workflow-nav" aria-label="Workflows">
+          <a href="/">Object Explorer</a>
+          <a href="/reconstruction">3D Capture</a>
+        </nav>
         <div class="privacy" title="Camera frames are processed in your browser and are not uploaded">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3 5 6v5c0 4.6 3 8.1 7 10 4-1.9 7-5.4 7-10V6l-7-3Zm-3 9 2 2 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span>Private · processed in this browser</span>

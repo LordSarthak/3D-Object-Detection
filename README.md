@@ -52,6 +52,16 @@ The default page is the camera-based **Object Explorer**. It runs the Florence-2
 
 The existing webcam **Posture Monitor** remains available at `http://127.0.0.1:5000/posture`. It runs MediaPipe Pose Landmarker Lite in the browser and does not need the Python AI packages used by Object Explorer.
 
+The **3D Capture** workflow is at `http://127.0.0.1:5000/reconstruction`. It accepts 8–30 overlapping photos from the webcam or image files, runs COLMAP multi-view reconstruction, scales the resulting mesh to the object's measured longest dimension, and provides `.obj` and `.ply` downloads. Photos remain under `bodyposture/bodyposture/scan_sessions` until **Clear / new scan** is used. They are excluded from Git.
+
+COLMAP is a separate system application; installing the Python requirements alone does not install it. Install the [official COLMAP application](https://colmap.github.io/install.html) and a Windows build that includes dense stereo and the `poisson_mesher` command, then set its full executable path in the same PowerShell terminal before starting Flask:
+
+```powershell
+$env:COLMAP_EXE = "C:\path\to\COLMAP\colmap.exe"
+```
+
+Alternatively, add `colmap.exe` to `PATH`. The page reports whether COLMAP and the Python mesh-scaling dependency are available. COLMAP produces geometry at arbitrary scale; the entered longest physical dimension provides uniform scale, not a guarantee of survey or manufacturing accuracy. Glossy, transparent, plain, moving, or poorly photographed objects may fail or produce incomplete geometry.
+
 The live result is a personal awareness cue, not a medical or "good posture" grade:
 
 - Before calibration, the head and torso angles are estimates of the camera image and should not be interpreted as a score.
@@ -86,13 +96,16 @@ The live result is a personal awareness cue, not a medical or "good posture" gra
 
    ```powershell
    cd .\bodyposture\bodyposture
+   $env:COLMAP_EXE = "C:\path\to\COLMAP\colmap.exe"
    python main.py
    ```
 
-5. Open `http://127.0.0.1:5000` in current Chrome or Edge, allow camera access, and press **Start scanning**. The first analysis downloads and initializes Florence-2. The interface shows common object detections and separate natural-language descriptions of visible image regions. **Scan once** captures one frame; **Stop scanning** stops continuous scans. Expect slower updates on CPU-only laptops.
+5. Open `http://127.0.0.1:5000` in current Chrome or Edge and allow camera access. **Object Explorer** shows common object detections and separate natural-language descriptions of visible image regions. The first analysis downloads and initializes Florence-2. **Scan once** captures one frame; **Stop scanning** stops continuous scans. Expect slower updates on CPU-only laptops.
+
+For a 3D export, open **3D Capture**, take 8–30 overlapping photos while the object stays still, enter its measured longest dimension in centimeters, and choose **Build 3D model**. A reconstruction requires COLMAP, a compatible GPU-enabled dense-stereo build, and the `poisson_mesher` command. The OBJ and PLY exports are scaled in meters; inspect the result before relying on its shape or dimensions.
 
 In VS Code, select `.venv-posture` using **Python: Select Interpreter** (`Ctrl+Shift+P`). If script activation is blocked, use `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` in that terminal, then activate again.
 
-Object and component descriptions are generated from 2D frames. The model may miss unfamiliar, small, occluded, or visually ambiguous items, and its region descriptions should not be treated as an exhaustive or technically verified parts list. It does not reconstruct 3D models.
+Object and component descriptions are generated from 2D frames. The model may miss unfamiliar, small, occluded, or visually ambiguous items, and its region descriptions should not be treated as an exhaustive or technically verified parts list. 3D Capture is a separate multi-view photogrammetry workflow and needs COLMAP.
 
 For posture tracking, open `/posture`, start a session, and calibrate in a comfortable seated position. Those 2D camera estimates are personal trends, not medical measurements. Posture samples can be exported while the session is running.

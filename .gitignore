@@ -1,5 +1,7 @@
 venv/
 .venv-yolo/
+/.venv-posture/
+/bodyposture/bodyposture/scan_sessions/
 *.h5
 *.dll
 *.pyd
