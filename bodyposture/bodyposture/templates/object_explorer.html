@@ -97,6 +97,50 @@
       @media (max-width: 760px) { .shell { padding: 0 17px 26px; } main { padding-top: 26px; } .layout { grid-template-columns: 1fr; } .side-column { grid-template-columns: repeat(2, minmax(0, 1fr)); } .stage { min-height: 250px; } }
       @media (max-width: 520px) { .shell { padding-right: 12px; padding-left: 12px; } .topbar { height: 63px; } .brand-name small { display: none; } .privacy span { display: none; } .intro { align-items: start; flex-direction: column; } .side-column { grid-template-columns: 1fr; } .camera-footer { align-items: stretch; flex-direction: column; } .actions { width: 100%; } .actions .button { flex: 1; } .stage { min-height: 220px; } .footer { flex-direction: column; gap: 5px; } }
       @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+      body { background:#f5f7f5; }
+      .shell { width:min(1480px,100%); padding-right:clamp(18px,4vw,64px); padding-left:clamp(18px,4vw,64px); }
+      .topbar { height:76px; }
+      .brand-mark { width:38px; height:38px; border-radius:12px; box-shadow:0 5px 14px rgb(52 93 72 / 22%); }
+      .workflow-links { align-items:center; gap:5px; padding:5px; border:1px solid #e3e8e3; border-radius:11px; background:#fff; }
+      .workflow-links .top-link { padding:8px 11px; border-radius:7px; }
+      .workflow-links .top-link[aria-current="page"] { background:#edf4ef; color:var(--green-dark); font-weight:700; }
+      main { padding-top:36px; }
+      .intro { align-items:center; margin-bottom:22px; }
+      h1 { font-weight:620; letter-spacing:-.045em; }
+      .eyebrow { letter-spacing:.13em; }
+      .privacy { padding:8px 11px; border:1px solid #e2e9e3; border-radius:99px; background:#fff; }
+      .layout { grid-template-columns:minmax(0,1.65fr) minmax(300px,.75fr); gap:17px; }
+      .card { border-color:#e3e8e3; border-radius:13px; box-shadow:0 5px 22px rgb(27 43 33 / 4%); }
+      .camera-card { box-shadow:0 8px 28px rgb(27 43 33 / 7%); }
+      .stage { min-height:400px; aspect-ratio:16 / 10; }
+      .card-header { min-height:60px; padding-right:20px; padding-left:20px; }
+      .card-heading { font-size:13px; }
+      .status { padding:6px 10px; border-radius:99px; background:#f2f4f1; font-weight:600; }
+      .stage-hint { border-color:rgb(255 255 255 / 22%); font-size:11px; }
+      .camera-footer { padding:14px 18px; }
+      .camera-note { line-height:1.5; }
+      .button { min-height:39px; border-radius:8px; }
+      .panel { padding:19px; }
+      .panel-heading { margin-bottom:14px; }
+      .section-title { font-size:14px; }
+      .count { min-width:27px; height:27px; font-size:11px; }
+      .label-list { max-height:380px; }
+      .label-item { transition:background .15s,border-color .15s,box-shadow .15s; }
+      .label-item.object-choice { width:100%; grid-template-columns:11px minmax(0,1fr) auto; border-color:#e9ece7; color:var(--ink); text-align:left; cursor:pointer; }
+      .label-item.object-choice:hover,.label-item.object-choice.selected { border-color:#8bab96; background:#f4f8f4; box-shadow:0 0 0 2px rgb(71 123 96 / 8%); }
+      .label-item.object-choice:focus-visible { outline:3px solid #b8d4c1; outline-offset:2px; }
+      .object-confidence { color:var(--green-dark); font-size:10px; font-weight:750; white-space:nowrap; }
+      .insight-value { margin:2px 0 11px; font-size:23px; font-weight:650; letter-spacing:-.04em; }
+      .insight-label { color:var(--muted); font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
+      .insight-copy { margin:0; color:#59635c; font-size:12px; line-height:1.65; }
+      .result-meta { display:flex; flex-wrap:wrap; gap:7px; margin-top:13px; }
+      .result-chip { padding:5px 8px; border:1px solid #e6ebe6; border-radius:7px; background:#fafbf9; color:#68736b; font-size:10px; }
+      .empty { padding:15px; border-style:dashed; background:#fbfcfa; line-height:1.55; }
+      .footer { padding-top:15px; border-top:1px solid #e5e9e5; }
+      #model-state { color:var(--green-dark); font-weight:650; }
+      @media(max-width:920px) { .layout { grid-template-columns:minmax(0,1fr) 300px; } .stage { min-height:300px; } }
+      @media(max-width:760px) { .layout { grid-template-columns:1fr; } .side-column { grid-template-columns:repeat(2,minmax(0,1fr)); } .stage { min-height:310px; } }
+      @media(max-width:520px) { .shell { padding-right:12px; padding-left:12px; } .topbar { height:auto; min-height:66px; gap:10px; } .workflow-links { gap:1px; } .workflow-links .top-link { padding:7px; font-size:11px; } .layout,.side-column { grid-template-columns:1fr; } .stage { min-height:230px; } .camera-footer { padding:13px; } .privacy { display:none; } }
     </style>
   </head>
   <body>
@@ -106,7 +150,7 @@
           <div class="brand-mark" aria-hidden="true">
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none"><path d="M5 5h5v2H7v3H5V5Zm9 0h5v5h-2V7h-3V5ZM5 14h2v3h3v2H5v-5Zm12 0h2v5h-5v-2h3v-3Z" fill="currentColor"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/></svg>
           </div>
-          <div class="brand-name">Object Explorer <small>/ live world scan</small></div>
+          <div class="brand-name">Object Explorer <small>/ live recognition</small></div>
         </div>
         <nav class="workflow-links" aria-label="Workflows">
           <a class="top-link" href="/reconstruction">3D Capture</a>
@@ -116,9 +160,9 @@
       <main>
         <div class="intro">
           <div>
-            <p class="eyebrow">AI vision · camera-local capture</p>
-            <h1>Explore what you can see.</h1>
-            <p class="subhead">Point the camera at an object. The vision model will name recognizable objects and describe visible regions and components.</p>
+            <p class="eyebrow">Live object recognition · local processing</p>
+            <h1>Identify what’s in view.</h1>
+            <p class="subhead">See recognized objects as they enter the camera view, with confidence and practical context for the selected item.</p>
           </div>
           <div class="privacy" title="Frames are sent only to the local Flask server on this computer">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3 5 6v5c0 4.6 3 8.1 7 10 4-1.9 7-5.4 7-10V6l-7-3Zm-3 9 2 2 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -131,42 +175,45 @@
               <div class="card-header">
                 <div class="card-heading">
                   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="m16 10 5-3v10l-5-3v-4Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
-                  Live object scan
+                  Live recognition
                 </div>
                 <div class="status" id="status"><span class="status-dot"></span><span id="status-label">Camera off</span></div>
               </div>
               <div class="stage">
                 <video id="video" autoplay muted playsinline aria-label="Camera preview"></video>
                 <canvas id="overlay" aria-hidden="true"></canvas>
-                <div class="stage-labels" id="stage-labels" aria-live="polite" aria-label="Detected objects and visible details"></div>
-                <div class="stage-hint" id="stage-hint" role="status" aria-live="polite">Start scanning to load the AI model</div>
+                <div class="stage-labels" id="stage-labels" aria-live="polite" aria-label="Detected objects"></div>
+                <div class="stage-hint" id="stage-hint" role="status" aria-live="polite">Start live recognition to identify objects in view</div>
                 <div class="placeholder" id="placeholder">
                   <svg width="45" height="45" viewBox="0 0 48 48" fill="none" aria-hidden="true"><rect x="5" y="11" width="29" height="26" rx="5" stroke="currentColor" stroke-width="1.5"/><path d="m34 20 9-5v18l-9-5V20Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M15 24h9m-4.5-4.5v9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-                  <h2>Ready to explore</h2>
-                  <p>Start your camera, center an object in view, and let the model describe what it sees.</p>
+                  <h2>Ready to identify objects</h2>
+                  <p>Start live recognition. Detected objects and useful context update from the current camera view.</p>
                 </div>
               </div>
               <div class="camera-footer">
-                <span class="camera-note">First scan downloads Florence-2 to this computer; allow extra time for setup.</span>
+                <span class="camera-note">The local detector warms up once. Recognition then updates as each view is analyzed.</span>
                 <div class="actions">
                   <select class="camera-select" id="camera-select" aria-label="Choose camera"><option value="">Default camera</option></select>
-                  <button class="button secondary" id="scan-once" type="button">Scan once</button>
-                  <button class="button primary" id="scan-toggle" type="button">Start scanning</button>
+                  <button class="button secondary" id="scan-once" type="button" disabled>Check this frame</button>
+                  <button class="button primary" id="scan-toggle" type="button" disabled>Start live recognition</button>
                 </div>
               </div>
             </div>
             <div class="error" id="error" role="alert"></div>
             <section class="card panel">
-              <div class="panel-heading"><h2 class="section-title">Recognized objects</h2><span class="count" id="object-count">0</span></div>
-              <div class="label-list" id="object-list"><div class="empty">Start a scan to see object labels.</div></div>
-              <p class="explain">Object names come from the model's learned vocabulary. Unusual, hidden, or unfamiliar items may be missed or mislabeled.</p>
+              <div class="panel-heading"><h2 class="section-title">In this view</h2><span class="count" id="object-count">0</span></div>
+              <div class="label-list" id="object-list"><div class="empty">Start live recognition to see what the camera detects.</div></div>
+              <p class="explain">Select a result for practical context. Recognition is limited to common object categories and can miss unusual or partly hidden items.</p>
             </section>
           </section>
-          <aside class="side-column" aria-label="AI analysis and guidance">
-            <section class="card panel">
-              <div class="panel-heading"><h2 class="section-title">Parts &amp; visible details</h2><span class="count" id="part-count">0</span></div>
-              <div class="label-list" id="part-list"><div class="empty">Visible details appear here after analysis.</div></div>
-              <p class="explain">Descriptions are AI guesses about visible image regions—not a guaranteed parts catalog. Different views can reveal different details.</p>
+          <aside class="side-column" aria-label="Selected object and scan guidance">
+            <section class="card panel" aria-live="polite">
+              <div class="panel-heading"><h2 class="section-title">Selected object</h2><span class="count" id="selected-confidence">—</span></div>
+              <div class="insight-label">Recognized category</div>
+              <div class="insight-value" id="selected-label">Waiting for a detection</div>
+              <p class="insight-copy" id="selected-insight">When the camera recognizes an object, its result and relevant practical context will appear here.</p>
+              <div class="result-meta"><span class="result-chip" id="model-state">Local detector · ready to start</span><span class="result-chip" id="analysis-time">No live result yet</span></div>
+              <p class="explain">Confidence measures how strongly the model matched a visual category. It does not verify the object’s condition, contents, or safety.</p>
             </section>
             <section class="card panel">
               <div class="panel-heading"><h2 class="section-title">Get a clearer scan</h2></div>
@@ -177,15 +224,15 @@
               </ul>
             </section>
             <section class="card panel">
-              <div class="panel-heading"><h2 class="section-title">About this model</h2></div>
-              <p class="camera-note" id="model-state">Florence-2 base · runs on this computer</p>
-              <p class="explain">This general vision model can describe many everyday scenes, but it cannot reliably identify every object or every functional component. Results are best-effort visual descriptions, not technical or safety analysis.</p>
+              <div class="panel-heading"><h2 class="section-title">What recognition can tell you</h2></div>
+              <p class="camera-note">Local YOLOv8n detector · 80 common categories</p>
+              <p class="explain">Results identify visual categories, not exact products. Small, covered, unusual, or low-light objects may not be recognized. A confidence value is not a measure of object safety or condition.</p>
             </section>
           </aside>
         </div>
       </main>
-      <footer class="footer"><span>Object Explorer · AI-generated labels can be wrong</span><span>Image frames are processed by your local server and are not saved</span></footer>
+      <footer class="footer"><span>Object Explorer · AI category matches can be wrong</span><span>Frames are processed locally and are not saved</span></footer>
     </div>
-    <script type="module" src="{{ url_for('static', filename='object-explorer.js', v=3) }}"></script>
+    <script type="module" src="{{ url_for('static', filename='object-explorer.js', v=6) }}"></script>
   </body>
 </html>

@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,14 +21,12 @@ from flask import Flask, jsonify, render_template, request, send_file
 from PIL import Image, UnidentifiedImageError
 
 
-MODEL_ID = "florence-community/Florence-2-base"
+DETECTOR_PATH = Path(__file__).resolve().parents[2] / "yolov8n.pt"
 MAX_IMAGE_BYTES = 6 * 1024 * 1024
-MAX_IMAGE_SIDE = 768
+MAX_IMAGE_SIDE = 640
 MAX_SCAN_IMAGES = 30
 MIN_SCAN_IMAGES = 8
 MAX_CAPTURE_BYTES = 8 * 1024 * 1024
-OBJECT_TASK = "<OD>"
-DETAIL_TASK = "<DENSE_REGION_CAPTION>"
 SCAN_ROOT = Path(__file__).resolve().parent / "scan_sessions"
 ASSET_NAMES = {"model.ply", "model.obj"}
 
@@ -35,12 +34,12 @@ app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.config["MAX_CONTENT_LENGTH"] = (MAX_CAPTURE_BYTES * 4 // 3) + 8192
 
-_model: Any = None
-_processor: Any = None
-_model_state = "not_loaded"
-_model_error: str | None = None
-_model_lock = threading.Lock()
-_inference_lock = threading.Lock()
+_detector: Any = None
+_detector_state = "not_loaded"
+_detector_lock = threading.Lock()
+_detection_lock = threading.Lock()
+_warmup_lock = threading.Lock()
+_warmup_thread: threading.Thread | None = None
 _reconstruction_lock = threading.Lock()
 _active_reconstruction_ids: set[str] = set()
 _active_scans_lock = threading.Lock()
@@ -112,6 +111,125 @@ def _scale_and_export_mesh(
         "vertex_count": int(len(mesh.vertices)),
         "face_count": int(len(mesh.faces)),
     }
+
+
+def _load_detector() -> Any:
+    global _detector, _detector_state
+    if _detector is not None:
+        return _detector
+
+    with _detector_lock:
+        if _detector is not None:
+            return _detector
+        _detector_state = "loading"
+        if not DETECTOR_PATH.is_file():
+            _detector_state = "error"
+            raise RuntimeError(
+                f"The local object detector weights were not found at {DETECTOR_PATH}."
+            )
+        try:
+            import torch
+            from ultralytics import YOLO
+
+            torch.set_num_threads(min(2, torch.get_num_threads()))
+            _detector = YOLO(str(DETECTOR_PATH))
+            _detector_state = "ready"
+            return _detector
+        except Exception as error:
+            _detector_state = "error"
+            app.logger.exception("Could not load the fast local object detector.")
+            raise RuntimeError(
+                "Could not load the local object detector. Check the app's Python dependencies and yolov8n.pt weights."
+            ) from error
+
+
+def _object_insight(label: str) -> str:
+    known_uses = {
+        "backpack": "A backpack is commonly used to carry personal items. The camera cannot tell what is inside.",
+        "bottle": "A bottle is commonly used to hold liquids. Its contents and safety cannot be identified from an image.",
+        "cell phone": "A phone is commonly used for calls, messages, photos, and apps. This scan cannot test whether it works.",
+        "chair": "A chair is designed for sitting. The scan does not assess its stability or weight capacity.",
+        "cup": "A cup is commonly used for drinking. Its material and cleanliness cannot be verified from an image.",
+        "keyboard": "A keyboard is commonly used to enter text and commands on a computer. The scan cannot test its keys.",
+        "laptop": "A laptop is a portable computer for software, communication, and media. This scan cannot test its condition.",
+        "microwave": "A microwave oven is commonly used to heat food. The scan cannot assess its electrical or food safety.",
+        "mouse": "A computer mouse is commonly used to control a pointer. The scan cannot test its buttons or connection.",
+        "remote": "A remote control is commonly used to operate another device. The scan cannot identify compatible devices.",
+        "scissors": "Scissors are commonly used to cut material. The scan cannot assess their condition or safe handling.",
+        "toothbrush": "A toothbrush is used for cleaning teeth. The scan cannot assess hygiene or suitability.",
+    }
+    return known_uses.get(
+        label.lower(),
+        f"The camera recognized a {label}-like object. This is a visual category match, not a check of its exact model, condition, or safety.",
+    )
+
+
+def _detect_objects(image: Image.Image) -> dict[str, Any]:
+    global _detector_state
+    scale = min(1.0, MAX_IMAGE_SIDE / max(image.size))
+    if scale < 1:
+        image = image.resize(
+            (round(image.width * scale), round(image.height * scale)),
+            Image.Resampling.LANCZOS,
+        )
+
+    started_at = time.perf_counter()
+    try:
+        with _detection_lock:
+            detector = _load_detector()
+            _detector_state = "analyzing"
+            result = detector.predict(
+                source=image,
+                imgsz=384,
+                conf=0.35,
+                max_det=12,
+                verbose=False,
+            )[0]
+    except Exception as error:
+        _detector_state = "error"
+        app.logger.exception("Live YOLO object detection failed.")
+        raise RuntimeError(
+            "The live object detector could not analyze this frame. Check the local YOLO weights and app dependencies."
+        ) from error
+    _detector_state = "ready"
+
+    entries = []
+    boxes = result.boxes
+    if boxes is not None:
+        for box, confidence, class_id in zip(
+            boxes.xyxy.cpu().tolist(),
+            boxes.conf.cpu().tolist(),
+            boxes.cls.cpu().tolist(),
+        ):
+            label = str(detector.names[int(class_id)])
+            x1, y1, x2, y2 = (float(value) for value in box)
+            entries.append({
+                "label": label,
+                "confidence": round(float(confidence), 3),
+                "insight": _object_insight(label),
+                "box": [
+                    max(0, min(image.width, x1)),
+                    max(0, min(image.height, y1)),
+                    max(0, min(image.width, x2)),
+                    max(0, min(image.height, y2)),
+                ],
+            })
+    entries.sort(key=lambda item: item["confidence"], reverse=True)
+    return {
+        "width": image.width,
+        "height": image.height,
+        "objects": entries,
+        "parts": [],
+        "engine": "YOLOv8n",
+        "analysis_ms": round((time.perf_counter() - started_at) * 1000),
+    }
+
+
+def _warmup_detector() -> None:
+    try:
+        _detect_objects(Image.new("RGB", (384, 384)))
+    except RuntimeError:
+        app.logger.exception("Background object-detector warmup failed.")
 
 
 def _build_reconstruction(scan_id: str, longest_dimension_cm: float) -> dict[str, Any]:
@@ -273,121 +391,6 @@ def _decode_capture(encoded: str) -> Image.Image:
         raise ValueError("The captured photo could not be read. Try taking it again.") from error
 
 
-def _load_model() -> tuple[Any, Any]:
-    global _model, _processor, _model_state, _model_error
-
-    if _model is not None and _processor is not None:
-        return _model, _processor
-
-    with _model_lock:
-        if _model is not None and _processor is not None:
-            return _model, _processor
-
-        _model_state = "loading"
-        _model_error = None
-        try:
-            import torch
-            from transformers import AutoProcessor, Florence2ForConditionalGeneration
-
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            dtype = torch.float16 if device == "cuda" else torch.float32
-            processor = AutoProcessor.from_pretrained(MODEL_ID)
-            model = Florence2ForConditionalGeneration.from_pretrained(
-                MODEL_ID,
-                torch_dtype=dtype,
-            ).to(device)
-            model.eval()
-        except Exception as error:
-            _model_state = "error"
-            _model_error = str(error)
-            app.logger.exception("Could not load the Florence-2 model.")
-            raise RuntimeError(
-                "Could not load Florence-2. Check your internet connection and installed packages, then restart the app."
-            ) from error
-
-        _model = model
-        _processor = processor
-        _model_state = "ready"
-        return model, processor
-
-
-def _run_task(
-    model: Any,
-    processor: Any,
-    image: Image.Image,
-    task: str,
-    max_new_tokens: int,
-) -> dict[str, Any]:
-    import torch
-
-    inputs = processor(text=task, images=image, return_tensors="pt")
-    inputs = {key: value.to(model.device) for key, value in inputs.items()}
-    with torch.inference_mode():
-        generated = model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            num_beams=1,
-            do_sample=False,
-        )
-    decoded = processor.batch_decode(generated, skip_special_tokens=False)[0]
-    result = processor.post_process_generation(
-        decoded,
-        task=task,
-        image_size=image.size,
-    )
-    task_result = result.get(task, {})
-    boxes = task_result.get("bboxes", [])
-    labels = task_result.get("labels", [])
-
-    entries = []
-    for box, label in zip(boxes, labels):
-        if len(box) != 4:
-            continue
-        x1, y1, x2, y2 = (float(value) for value in box)
-        entries.append(
-            {
-                "label": str(label).strip(),
-                "box": [
-                    max(0, min(image.width, x1)),
-                    max(0, min(image.height, y1)),
-                    max(0, min(image.width, x2)),
-                    max(0, min(image.height, y2)),
-                ],
-            }
-        )
-    return {"items": entries}
-
-
-def analyze_image(image: Image.Image) -> dict[str, Any]:
-    scale = min(1.0, MAX_IMAGE_SIDE / max(image.size))
-    if scale < 1:
-        new_size = (round(image.width * scale), round(image.height * scale))
-        image = image.resize(new_size, Image.Resampling.LANCZOS)
-
-    global _model_state, _model_error
-    with _inference_lock:
-        model, processor = _load_model()
-        _model_state = "analyzing"
-        try:
-            objects = _run_task(model, processor, image, OBJECT_TASK, 160)
-            details = _run_task(model, processor, image, DETAIL_TASK, 320)
-        except Exception as error:
-            _model_state = "error"
-            _model_error = str(error)
-            app.logger.exception("Florence-2 image analysis failed.")
-            raise RuntimeError(
-                "The vision model could not analyze this frame. Try a clearer image with better lighting."
-            ) from error
-        _model_state = "ready"
-
-    return {
-        "width": image.width,
-        "height": image.height,
-        "objects": objects["items"],
-        "parts": details["items"],
-    }
-
-
 @app.get("/")
 def object_explorer():
     return render_template("object_explorer.html")
@@ -405,7 +408,23 @@ def reconstruction_page():
 
 @app.get("/api/status")
 def model_status():
-    return jsonify({"state": _model_state})
+    return jsonify({"state": _detector_state, "engine": "YOLOv8n"})
+
+
+@app.post("/api/detector/warmup")
+def warmup_detector():
+    global _warmup_thread
+    with _warmup_lock:
+        if _detector_state == "ready":
+            return jsonify({"state": "ready"}), 200
+        if _warmup_thread is None or not _warmup_thread.is_alive():
+            _warmup_thread = threading.Thread(
+                target=_warmup_detector,
+                name="object-detector-warmup",
+                daemon=True,
+            )
+            _warmup_thread.start()
+    return jsonify({"state": _detector_state}), 202
 
 
 @app.get("/api/reconstruction/status")
@@ -555,9 +574,9 @@ def analyze_frame():
         return jsonify({"error": "The camera frame could not be read as an image."}), 400
 
     try:
-        result = analyze_image(image)
+        result = _detect_objects(image)
     except RuntimeError as error:
-        return jsonify({"error": str(error), "state": _model_state}), 503
+        return jsonify({"error": str(error), "state": _detector_state}), 503
     return jsonify(result)
 
 

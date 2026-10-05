@@ -48,7 +48,7 @@ tech stack : Yolo, OpenCV, Pillow, Transformers, pyrenderer, Pytorch, Matplotlib
 
 ## Setup: live object and part explorer on Windows
 
-The default page is the camera-based **Object Explorer**. It runs the Florence-2 base checkpoint on the local Flask server and performs general object detection and dense region captioning on camera frames. It attempts to recognize everyday objects and describe visible regions/components; its open-world labels are best-effort guesses, not a guarantee that every object or functional part will be identified. The first scan downloads the model from Hugging Face and can take a while. Processing is local to this computer; camera frames are not saved or sent to a hosted inference API.
+The default page is the camera-based **Object Explorer**. It runs the repository's small YOLOv8n detector locally and reports common object-category matches, confidence, and practical context for the selected result. The detector is warmed in the background when the page opens, then reuses one inference pass per frame instead of running a separate slow captioning pass. Live updates are limited by the computer's hardware; CPU-only inference can still take a few seconds per frame, and the page shows the measured processing time. Recognition is limited to the model's 80 common categories; it does not identify arbitrary products, functional parts, condition, or safety. Camera frames are processed locally and are not saved or sent to a hosted inference API.
 
 The existing webcam **Posture Monitor** remains available at `http://127.0.0.1:5000/posture`. It runs MediaPipe Pose Landmarker Lite in the browser and does not need the Python AI packages used by Object Explorer.
 
@@ -100,12 +100,12 @@ The live result is a personal awareness cue, not a medical or "good posture" gra
    python main.py
    ```
 
-5. Open `http://127.0.0.1:5000` in current Chrome or Edge and allow camera access. **Object Explorer** shows common object detections and separate natural-language descriptions of visible image regions. The first analysis downloads and initializes Florence-2. **Scan once** captures one frame; **Stop scanning** stops continuous scans. Expect slower updates on CPU-only laptops.
+5. Open `http://127.0.0.1:5000` in current Chrome or Edge and allow camera access. **Object Explorer** begins warming up the local detector while you prepare the camera, then shows current object detections, confidence, and item-specific practical notes. Choose **Check this frame** for one image or **Start live recognition** for continuous updates. Expect slower updates on CPU-only laptops; the latest processing time is shown with each result.
 
 For a 3D export, open **3D Capture**, take 8–30 overlapping photos while the object stays still, enter its measured longest dimension in centimeters, and choose **Build 3D model**. A reconstruction requires COLMAP, a compatible GPU-enabled dense-stereo build, and the `poisson_mesher` command. The OBJ and PLY exports are scaled in meters; inspect the result before relying on its shape or dimensions.
 
 In VS Code, select `.venv-posture` using **Python: Select Interpreter** (`Ctrl+Shift+P`). If script activation is blocked, use `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` in that terminal, then activate again.
 
-Object and component descriptions are generated from 2D frames. The model may miss unfamiliar, small, occluded, or visually ambiguous items, and its region descriptions should not be treated as an exhaustive or technically verified parts list. 3D Capture is a separate multi-view photogrammetry workflow and needs COLMAP.
+Object labels and practical notes are generated from 2D frames. The model may miss unfamiliar, small, occluded, or visually ambiguous items; its confidence does not verify that the label is correct, and the notes do not assess condition or safety. 3D Capture is a separate multi-view photogrammetry workflow and needs COLMAP.
 
 For posture tracking, open `/posture`, start a session, and calibrate in a comfortable seated position. Those 2D camera estimates are personal trends, not medical measurements. Posture samples can be exported while the session is running.

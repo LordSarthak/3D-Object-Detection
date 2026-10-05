@@ -1,3 +1,5 @@
+const SCAN_INTERVAL_MS = 500;
+
 const video = document.getElementById("video");
 const overlay = document.getElementById("overlay");
 const context = overlay.getContext("2d");
@@ -14,6 +16,9 @@ let animationHandle = null;
 let lastScanAt = 0;
 let currentRequest = null;
 let lastResult = null;
+let selectedObject = null;
+let backendReady = false;
+let cameraOpening = false;
 
 function setStatus(label, state = "") {
   const status = document.getElementById("status");
@@ -68,7 +73,7 @@ async function openCamera() {
 }
 
 function makeFrame() {
-  const scale = Math.min(1, 768 / Math.max(video.videoWidth, video.videoHeight));
+  const scale = Math.min(1, 640 / Math.max(video.videoWidth, video.videoHeight));
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(video.videoWidth * scale);
   canvas.height = Math.round(video.videoHeight * scale);
@@ -82,7 +87,7 @@ async function analyzeCurrentFrame() {
   scanOnceButton.disabled = true;
   lastScanAt = performance.now();
   setStatus("Analyzing frame…", "busy");
-  stageHint.textContent = "AI is reading the current frame · first scan may take longer";
+  stageHint.textContent = "Checking this frame for familiar objects…";
 
   const frame = makeFrame();
   const form = new FormData();
@@ -96,9 +101,21 @@ async function analyzeCurrentFrame() {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || `Image analysis failed (${response.status}).`);
+    if (
+      result.engine !== "YOLOv8n"
+      || !Number.isFinite(result.analysis_ms)
+      || !Array.isArray(result.objects)
+      || result.objects.some(item => !Number.isFinite(item.confidence) || typeof item.insight !== "string")
+    ) {
+      throw new Error("The app server is outdated. Restart main.py to enable fast, item-specific results.");
+    }
     renderResults(result);
-    stageHint.textContent = "Objects in green · detailed regions in amber and blue";
-    document.getElementById("model-state").textContent = "Florence-2 base · model ready on this computer";
+    const detectedCount = result.objects.length;
+    stageHint.textContent = detectedCount
+      ? `${detectedCount} object${detectedCount === 1 ? "" : "s"} recognized in this view`
+      : "No familiar object category recognized in this view";
+    document.getElementById("model-state").textContent = "YOLOv8n · local detector";
+    document.getElementById("analysis-time").textContent = `Analyzed in ${(result.analysis_ms / 1000).toFixed(1)} s`;
   } catch (error) {
     if (error.name !== "AbortError") {
       setError(error.message || "The image could not be analyzed.");
@@ -108,7 +125,7 @@ async function analyzeCurrentFrame() {
   } finally {
     currentRequest = null;
     requestInProgress = false;
-    scanOnceButton.disabled = requestInProgress;
+    scanOnceButton.disabled = !backendReady || cameraOpening || requestInProgress;
     if (isScanning && stream) {
       setStatus("Camera live · results update as they arrive", "running");
     }
@@ -118,10 +135,9 @@ async function analyzeCurrentFrame() {
 function renderResults(result) {
   lastResult = result;
   document.getElementById("object-count").textContent = result.objects.length;
-  document.getElementById("part-count").textContent = result.parts.length;
-  renderList("object-list", result.objects, "No familiar object labels in this frame.");
-  renderList("part-list", result.parts, "No separate component details were returned for this view.");
+  renderList("object-list", result.objects, "No familiar object category recognized in this frame. Try a clearer, closer view with the object fully visible.");
   renderStageLabels(result);
+  setSelectedObject(result.objects[0] || null);
   drawBoxes(result);
   clearError();
 }
@@ -129,14 +145,10 @@ function renderResults(result) {
 function renderStageLabels(result) {
   const labels = document.getElementById("stage-labels");
   labels.replaceChildren();
-  const entries = [
-    ...result.objects.map(item => ({ item, prefix: "Object", className: "" })),
-    ...result.parts.map(item => ({ item, prefix: "Detail", className: "detail" })),
-  ];
-  entries.slice(0, 8).forEach(({ item, prefix, className }) => {
+  result.objects.slice(0, 8).forEach(item => {
     const label = document.createElement("span");
-    label.className = `stage-label ${className}`.trim();
-    label.textContent = `${prefix}: ${item.label}`;
+    label.className = "stage-label";
+    label.textContent = `${item.label} · ${Math.round(item.confidence * 100)}%`;
     labels.append(label);
   });
 }
@@ -151,20 +163,49 @@ function renderList(elementId, items, emptyText) {
     list.append(empty);
     return;
   }
-  items.forEach(item => {
-    const row = document.createElement("div");
-    row.className = "label-item";
+  items.forEach((item, index) => {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "label-item object-choice";
+    row.dataset.index = String(index);
+    row.classList.toggle("selected", item === selectedObject);
+    row.setAttribute("aria-pressed", String(item === selectedObject));
     const swatch = document.createElement("span");
     swatch.className = "label-swatch";
     const label = document.createElement("span");
     label.className = "label-text";
     label.textContent = item.label;
-    row.append(swatch, label);
+    const confidence = document.createElement("span");
+    confidence.className = "object-confidence";
+    confidence.textContent = `${Math.round(item.confidence * 100)}%`;
+    row.append(swatch, label, confidence);
+    row.addEventListener("click", () => {
+      setSelectedObject(item);
+      drawBoxes(lastResult);
+    });
     list.append(row);
   });
 }
 
+function setSelectedObject(item) {
+  selectedObject = item;
+  document.querySelectorAll(".object-choice").forEach(row => {
+    const isSelected = item !== null
+      && lastResult?.objects[Number(row.dataset.index)] === item;
+    row.classList.toggle("selected", isSelected);
+    row.setAttribute("aria-pressed", String(isSelected));
+  });
+  document.getElementById("selected-label").textContent = item?.label || "Nothing recognized yet";
+  document.getElementById("selected-confidence").textContent = item
+    ? `${Math.round(item.confidence * 100)}% match`
+    : "—";
+  document.getElementById("selected-insight").textContent = item
+    ? item.insight
+    : "Try moving closer, improving the light, and keeping the whole object visible.";
+}
+
 function drawBoxes(result) {
+  if (!result) return;
   const bounds = overlay.getBoundingClientRect();
   if (!bounds.width || !bounds.height) return;
   const ratio = window.devicePixelRatio || 1;
@@ -176,19 +217,17 @@ function drawBoxes(result) {
   const scale = Math.min(bounds.width / result.width, bounds.height / result.height);
   const offsetX = (bounds.width - result.width * scale) / 2;
   const offsetY = (bounds.height - result.height * scale) / 2;
-  const groups = [
-    { items: result.objects, color: "#75bd8b" },
-    { items: result.parts, color: "#e2a94e" },
-  ];
-  groups.forEach(group => group.items.forEach(item => {
+  result.objects.forEach(item => {
     const [x1, y1, x2, y2] = item.box;
     const x = offsetX + x1 * scale;
     const y = offsetY + y1 * scale;
     const width = Math.max(0, (x2 - x1) * scale);
     const height = Math.max(0, (y2 - y1) * scale);
     if (width < 1 || height < 1) return;
-    context.strokeStyle = group.color;
-    context.lineWidth = 2.5;
+    const isSelected = item === selectedObject;
+    const color = isSelected ? "#bce4c8" : "#75bd8b";
+    context.strokeStyle = color;
+    context.lineWidth = isSelected ? 3.5 : 2;
     context.strokeRect(x, y, width, height);
     const label = item.label.slice(0, 40);
     context.font = "700 13px Segoe UI, sans-serif";
@@ -197,11 +236,11 @@ function drawBoxes(result) {
     const labelTop = y >= 25 ? y - 24 : Math.min(bounds.height - 22, y + 3);
     context.fillStyle = "rgb(20 28 23 / 94%)";
     context.fillRect(labelX, labelTop, labelWidth, 22);
-    context.fillStyle = group.color;
+    context.fillStyle = color;
     context.fillRect(labelX, labelTop, 3, 22);
     context.fillStyle = "#fff";
     context.fillText(label, labelX + 9, labelTop + 15, labelWidth - 12);
-  }));
+  });
 }
 
 async function closeCamera() {
@@ -224,20 +263,27 @@ async function closeCamera() {
   context.clearRect(0, 0, overlay.width, overlay.height);
   document.getElementById("stage-labels").replaceChildren();
   setStatus("Camera off");
-  toggleButton.textContent = "Start scanning";
-  scanOnceButton.disabled = false;
-  stageHint.textContent = "Start scanning to load the AI model";
+  toggleButton.textContent = "Start live recognition";
+  scanOnceButton.disabled = !backendReady;
+  stageHint.textContent = lastResult
+    ? "Camera off · last analyzed result is still shown"
+    : "Start live recognition to identify objects in view";
 }
 
 function scanLoop() {
   if (!isScanning) return;
   const now = performance.now();
-  if (!requestInProgress && now - lastScanAt >= 1700) void analyzeCurrentFrame();
+  if (!requestInProgress && now - lastScanAt >= SCAN_INTERVAL_MS) void analyzeCurrentFrame();
   animationHandle = requestAnimationFrame(scanLoop);
 }
 
 async function startScanning() {
+  if (!backendReady) {
+    setError("Restart main.py to enable the fast local object detector.");
+    return;
+  }
   clearError();
+  cameraOpening = true;
   toggleButton.disabled = true;
   scanOnceButton.disabled = true;
   setStatus("Opening camera…", "busy");
@@ -245,12 +291,12 @@ async function startScanning() {
   try {
     await openCamera();
     isScanning = true;
-    toggleButton.textContent = "Stop scanning";
+    toggleButton.textContent = "Stop live recognition";
     scanOnceButton.disabled = false;
     toggleButton.disabled = false;
-    setStatus("Camera live · preparing first AI scan", "running");
-    stageHint.textContent = "First scan loads the model and may take a little while";
-    document.getElementById("model-state").textContent = "Florence-2 base · preparing model; first run downloads the weights";
+    setStatus("Camera live · initializing local detector", "running");
+    stageHint.textContent = "Loading local detector for the first scan";
+    document.getElementById("model-state").textContent = "YOLOv8n · initializing local detector";
     void analyzeCurrentFrame();
     scanLoop();
     stream.getVideoTracks()[0].addEventListener("ended", () => {
@@ -263,7 +309,8 @@ async function startScanning() {
     await closeCamera();
     setError(error.message || "The camera could not be started.");
   } finally {
-    toggleButton.disabled = false;
+    cameraOpening = false;
+    toggleButton.disabled = !backendReady;
   }
 }
 
@@ -273,9 +320,14 @@ toggleButton.addEventListener("click", () => {
 });
 
 scanOnceButton.addEventListener("click", async () => {
+  if (!backendReady) {
+    setError("Restart main.py to enable the fast local object detector.");
+    return;
+  }
   clearError();
   if (!stream) {
     scanOnceButton.disabled = true;
+    cameraOpening = true;
     setStatus("Opening camera…", "busy");
     try {
       await openCamera();
@@ -286,7 +338,8 @@ scanOnceButton.addEventListener("click", async () => {
       setError(error.message || "The camera could not be started.");
       return;
     } finally {
-      scanOnceButton.disabled = false;
+      cameraOpening = false;
+      scanOnceButton.disabled = !backendReady;
     }
   }
   await analyzeCurrentFrame();
@@ -306,20 +359,46 @@ function drawBoxesFromCanvas() {
 async function refreshModelState() {
   try {
     const response = await fetch("/api/status", { cache: "no-store" });
+    if (!response.ok) throw new Error(`Detector status returned ${response.status}.`);
     const result = await response.json();
-    if (result.state === "ready") {
-      document.getElementById("model-state").textContent = "Florence-2 base · model ready on this computer";
-    } else if (result.state === "loading" || result.state === "analyzing") {
-      document.getElementById("model-state").textContent = "Florence-2 base · model is loading or analyzing";
-    } else if (result.state === "error") {
-      document.getElementById("model-state").textContent = "Florence-2 base · model needs attention; start a scan for details";
+    if (result.engine !== "YOLOv8n") {
+      backendReady = false;
+      toggleButton.disabled = true;
+      scanOnceButton.disabled = true;
+      document.getElementById("model-state").textContent = "Restart main.py to activate the fast detector";
+      setError("The running app server is outdated. Stop it and restart main.py before scanning.");
+      return;
     }
-  } catch (error) {
+    backendReady = true;
+    toggleButton.disabled = cameraOpening;
+    scanOnceButton.disabled = cameraOpening || requestInProgress;
+    if (result.state === "ready") {
+      document.getElementById("model-state").textContent = "YOLOv8n · local detector ready";
+    } else if (result.state === "loading" || result.state === "analyzing") {
+      document.getElementById("model-state").textContent = "YOLOv8n · preparing the local detector";
+    } else if (result.state === "error") {
+      document.getElementById("model-state").textContent = "YOLOv8n · detector needs attention";
+    }
+  } catch {
+    backendReady = false;
+    cameraOpening = false;
+    toggleButton.disabled = true;
+    scanOnceButton.disabled = true;
     document.getElementById("model-state").textContent = "Local model status is not available";
   }
 }
 
 refreshCameras().catch(() => {
-  document.getElementById("model-state").textContent = "Camera list will appear after browser permission is granted";
+  setError("Camera list is unavailable. Check browser camera permissions and try again.");
 });
 void refreshModelState();
+fetch("/api/detector/warmup", { method: "POST" })
+  .then(response => {
+    if (!response.ok) throw new Error(`Detector warmup returned ${response.status}.`);
+    return response.json();
+  })
+  .then(() => refreshModelState())
+  .catch(() => {
+    void refreshModelState();
+  });
+window.setInterval(() => void refreshModelState(), 1500);

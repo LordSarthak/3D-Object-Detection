@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from PIL import Image
@@ -17,6 +18,17 @@ def encoded_test_photo() -> str:
     buffer = io.BytesIO()
     Image.new("RGB", (24, 16), color=(90, 130, 110)).save(buffer, format="JPEG")
     return base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
+class FakeTensor:
+    def __init__(self, values: list[object]) -> None:
+        self.values = values
+
+    def cpu(self) -> FakeTensor:
+        return self
+
+    def tolist(self) -> list[object]:
+        return self.values
 
 
 class ReconstructionApiTests(unittest.TestCase):
@@ -77,6 +89,56 @@ class ReconstructionApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("at least 8 photos", response.json["error"])
+
+    def test_live_detector_returns_object_specific_context_and_confidence(self) -> None:
+        boxes = SimpleNamespace(
+            xyxy=FakeTensor([[20, 30, 650, 350]]),
+            conf=FakeTensor([0.91]),
+            cls=FakeTensor([0]),
+        )
+        detector = SimpleNamespace(
+            names={0: "bottle"},
+            predict=lambda **_kwargs: [SimpleNamespace(boxes=boxes)],
+        )
+        image = Image.new("RGB", (800, 400))
+
+        with patch.object(main, "_load_detector", return_value=detector):
+            result = main._detect_objects(image)
+
+        self.assertEqual((result["width"], result["height"]), (640, 320))
+        self.assertEqual(len(result["objects"]), 1)
+        self.assertEqual(result["objects"][0]["label"], "bottle")
+        self.assertEqual(result["objects"][0]["confidence"], 0.91)
+        self.assertEqual(result["objects"][0]["box"], [20, 30, 640, 320])
+        self.assertIn("hold liquids", result["objects"][0]["insight"])
+        self.assertEqual(result["parts"], [])
+        self.assertEqual(result["engine"], "YOLOv8n")
+        self.assertGreaterEqual(result["analysis_ms"], 0)
+
+    def test_live_analyze_route_uses_fast_detection_without_loading_caption_model(self) -> None:
+        expected = {
+            "width": 24,
+            "height": 16,
+            "objects": [{
+                "label": "cup",
+                "confidence": 0.88,
+                "insight": "A cup is commonly used for drinking.",
+                "box": [1, 2, 20, 14],
+            }],
+            "parts": [],
+            "engine": "YOLOv8n",
+            "analysis_ms": 24,
+        }
+
+        with patch.object(main, "_detect_objects", return_value=expected) as detect:
+            response = self.client.post(
+                "/api/analyze",
+                data={"image": encoded_test_photo()},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json, expected)
+        detect.assert_called_once()
 
     def test_build_reports_missing_colmap_instead_of_returning_a_fake_model(self) -> None:
         scan_id = self.create_scan()

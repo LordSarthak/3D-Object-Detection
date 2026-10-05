@@ -357,7 +357,9 @@ async function checkTools() {
     } else {
       toolsReady = false;
       const missing = [];
-      if (!result.colmap_available) missing.push("COLMAP CLI (install it and set COLMAP_EXE to colmap.exe)");
+      if (!result.colmap_available) {
+        missing.push(result.colmap_error || "COLMAP CLI (install it and set COLMAP_EXE to colmap.exe)");
+      }
       if (!result.mesh_scaling_available) missing.push("trimesh (install the app requirements)");
       notice.textContent = `Reconstruction is not ready: ${missing.join("; ")}. Photos and object identification still work.`;
     }
